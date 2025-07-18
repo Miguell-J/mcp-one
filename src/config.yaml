@@ -1,0 +1,38 @@
+# Configuração dos servidores MCP
+servers:
+  - name: "github"
+    url: "http://localhost:3000"
+    description: "GitHub MCP Server - Manage issues, PRs, and repos"
+    enabled: true
+    timeout: 30
+    retry_attempts: 3
+    
+  - name: "jupyter"
+    url: "http://localhost:3001"
+    description: "Jupyter MCP Server - Execute Python code"
+    enabled: true
+    timeout: 60
+    retry_attempts: 2
+
+# Configurações do Hub
+hub:
+  host: "0.0.0.0"
+  port: 8000
+  debug: true
+  log_level: "INFO"
+  cors_enabled: true
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:8080"
+
+# Cache settings
+cache:
+  enabled: true
+  ttl: 300  # 5 minutos
+  max_size: 1000
+
+# Rate limiting
+rate_limit:
+  enabled: true
+  requests_per_minute: 100
+  burst_size: 10

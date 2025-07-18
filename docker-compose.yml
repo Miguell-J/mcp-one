@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  mcp-hub:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src/config.yaml:/app/config.yaml
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - redis
+    networks:
+      - mcp-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mcp-network
+
+  # Exemplo de MCP server para teste
+  mock-mcp:
+    image: python:3.11-slim
+    ports:
+      - "3000:3000"
+    command: |
+      bash -c "
+        pip install fastapi uvicorn &&
+        cat > /tmp/mock_mcp.py << 'EOF'
+        from fastapi import FastAPI
+        app = FastAPI()
+        
+        @app.get('/health')
+        async def health():
+            return {'status': 'healthy'}
+        
+        @app.get('/tools')
+        async def tools():
+            return {
+                'tools': [
+                    {
+                        'name': 'echo',
+                        'description': 'Echo back the input',
+                        'parameters': {'message': 'string'}
+                    },
+                    {
+                        'name': 'uppercase',
+                        'description': 'Convert text to uppercase',
+                        'parameters': {'text': 'string'}
+                    }
+                ]
+            }
+        
+        @app.post('/call')
+        async def call_tool(request: dict):
+            tool = request.get('tool')
+            args = request.get('arguments', {})
+            
+            if tool == 'echo':
+                return {'result': f'Echo: {args.get(\"message\", \"\")}'}
+            elif tool == 'uppercase':
+                return {'result': args.get('text', '').upper()}
+            else:
+                return {'error': 'Tool not found'}
+        EOF
+        
+        uvicorn mock_mcp:app --host 0.0.0.0 --port 3000
+      "
+    networks:
+      - mcp-network
+
+volumes:
+  redis_data:
+
+networks:
+  mcp-network:
+    driver: bridge
