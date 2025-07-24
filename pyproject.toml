@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mcp-hub"
+name = "mcp-one"
 dynamic = ["version"]
 description = "Central hub for managing multiple MCP servers"
 readme = "README.rst"
@@ -51,13 +51,13 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/miguellj/mcp-hub"
-Documentation = "https://mcp-hub.readthedocs.io"
-Repository = "https://github.com/miguell-j/mcp-hub"
-"Bug Tracker" = "https://github.com/miguell-j/mcp-hub/issues"
+Homepage = "https://github.com/miguellj/mcp-one"
+Documentation = "https://mcp-one.readthedocs.io"
+Repository = "https://github.com/miguell-j/mcp-one"
+"Bug Tracker" = "https://github.com/miguell-j/mcp-one/issues"
 
 [project.scripts]
-mcp-hub = "app.main:main"
+mcp-one = "app.main:main"
 
 [tool.hatch.version]
 path = "src/app/__init__.py"

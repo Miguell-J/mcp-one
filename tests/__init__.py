@@ -1,1 +1,1 @@
-"""Unit test package for mcp_hub."""
+"""Unit test package for mcp-one."""

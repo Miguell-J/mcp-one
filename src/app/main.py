@@ -23,6 +23,20 @@ from app.models.schemas import (
 from app.core.registry import MCPRegistry
 from app.core.router import MCPRouter
 
+from pathlib import Path
+
+# Caminho absoluto até a pasta deste arquivo
+BASE_DIR = Path(__file__).resolve().parent
+# Volta uma pasta (de app/ para src/)
+CONFIG_PATH = BASE_DIR.parent / "config.yaml"
+
+try:
+    with open(CONFIG_PATH, "r") as f:
+        config = yaml.safe_load(f)
+except FileNotFoundError:
+    print(f"❌ config.yaml file not in {CONFIG_PATH}")
+    config = {}
+
 # Configurar logging
 structlog.configure(
     processors=[
@@ -53,18 +67,23 @@ config: dict
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Gerencia lifecycle da aplicação."""
+    """_summary_
+
+    Args:
+        app (FastAPI): _description_
+    """
     global registry, router, start_time, config
     
     start_time = time.time()
     
     # Carrega configuração
     try:
-        with open("src/config.yaml", "r") as f:
+        with open(CONFIG_PATH, "r") as f:
             config = yaml.safe_load(f)
     except FileNotFoundError:
-        logger.error("config_file_not_found", path="src/config.yaml")
-        raise
+        print(f"❌ config.yaml file not in {CONFIG_PATH}")
+        config = {}
+
     
     # Inicializa registry e router
     registry = MCPRegistry()
@@ -96,7 +115,7 @@ async def lifespan(app: FastAPI):
 
 # Criar aplicação FastAPI
 app = FastAPI(
-    title="MCP Hub",
+    title="MCP one",
     description="Central hub for managing multiple MCP servers",
     version=__version__,
     lifespan=lifespan
@@ -151,9 +170,13 @@ async def general_exception_handler(request, exc):
 # Endpoints
 @app.get("/")
 async def root():
-    """Endpoint raiz com informações básicas."""
+    """_summary_
+
+    Returns:
+        _type_: _description_
+    """
     return {
-        "name": "MCP Hub",
+        "name": "MCP one",
         "version": __version__,
         "description": "Central hub for managing multiple MCP servers",
         "status": "online"
@@ -235,7 +258,7 @@ def main():
         with open("src/config.yaml", "r") as f:
             config = yaml.safe_load(f)
     except FileNotFoundError:
-        print("❌ Arquivo config.yaml não encontrado!")
+        print("❌ config.yaml file not found!")
         return
     
     hub_config = config.get("hub", {})

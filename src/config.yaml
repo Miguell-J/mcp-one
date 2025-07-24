@@ -1,18 +1,25 @@
 # Configuração dos servidores MCP
 servers:
-  - name: "github"
-    url: "http://localhost:3000"
-    description: "GitHub MCP Server - Manage issues, PRs, and repos"
+  - name: dummy
+    url: http://localhost:7000
     enabled: true
     timeout: 30
     retry_attempts: 3
-    
-  - name: "jupyter"
-    url: "http://localhost:3001"
-    description: "Jupyter MCP Server - Execute Python code"
-    enabled: true
-    timeout: 60
-    retry_attempts: 2
+
+    # 🔥 Novos campos:
+    endpoints:
+      health: /health
+      tools: /tools
+      call: /call
+
+    response_map:
+      tools_key: ""             # se a resposta já for lista, deixa vazio
+      tool_name_field: name
+      tool_desc_field: description
+
+    payload_map:
+      tool_field: tool
+      args_field: arguments
 
 # Configurações do Hub
 hub:

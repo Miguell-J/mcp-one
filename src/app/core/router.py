@@ -6,19 +6,28 @@ import httpx
 import structlog
 from app.models.schemas import ToolCallRequest, ToolCallResponse
 from app.core.registry import MCPRegistry
+from app.models.schemas import MCPServerConfig
 
 logger = structlog.get_logger(__name__)
 
 
 class MCPRouter:
-    """Router para executar ferramentas em servidores MCP."""
+    """_summary_
+    """
     
     def __init__(self, registry: MCPRegistry):
         self.registry = registry
         self._client = httpx.AsyncClient(timeout=60.0)
     
     async def execute_tool(self, request: ToolCallRequest) -> ToolCallResponse:
-        """Executa uma ferramenta em um servidor MCP."""
+        """_summary_
+
+        Args:
+            request (ToolCallRequest): _description_
+
+        Returns:
+            ToolCallResponse: _description_
+        """
         start_time = time.time()
         
         try:
@@ -53,11 +62,11 @@ class MCPRouter:
             
             # Executa a ferramenta
             response = await self._call_mcp_tool(
-                server_info.config.url,
+                server_info.config,
                 tool.name,
-                request.arguments,
-                server_info.config.timeout
+                request.arguments
             )
+
             
             execution_time = (time.time() - start_time) * 1000
             
@@ -90,28 +99,44 @@ class MCPRouter:
     
     async def _call_mcp_tool(
         self,
-        server_url: str,
+        config: MCPServerConfig,
         tool_name: str,
-        arguments: Dict[str, Any],
-        timeout: int
+        arguments: Dict[str, Any]
     ) -> ToolCallResponse:
-        """Faz a chamada HTTP para o servidor MCP."""
+        """_summary_
+
+        Args:
+            config (MCPServerConfig): _description_
+            tool_name (str): _description_
+            arguments (Dict[str, Any]): _description_
+
+        Returns:
+            ToolCallResponse: _description_
+        """
+        base_url = str(config.url).rstrip("/")
+        call_endpoint = config.endpoints.get("call", "/call")
+
+        tool_field = config.payload_map.get("tool_field", "tool")
+        args_field = config.payload_map.get("args_field", "arguments")
+
+        payload = {
+            tool_field: tool_name,
+            args_field: arguments
+        }
+
         try:
             response = await self._client.post(
-                f"{server_url}/call",
-                json={
-                    "tool": tool_name,
-                    "arguments": arguments
-                },
-                timeout=timeout
+                f"{base_url}{call_endpoint}",
+                json=payload,
+                timeout=config.timeout
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return ToolCallResponse(
                     success=True,
-                    result=data.get('result'),
-                    server_name=""  # Será preenchido pelo caller
+                    result=data.get("result"),
+                    server_name=""  # será preenchido em execute_tool
                 )
             else:
                 return ToolCallResponse(
@@ -119,7 +144,6 @@ class MCPRouter:
                     error=f"http_error_{response.status_code}",
                     server_name=""
                 )
-                
         except httpx.TimeoutException:
             return ToolCallResponse(
                 success=False,
@@ -132,8 +156,10 @@ class MCPRouter:
                 error=str(e),
                 server_name=""
             )
+
     
     async def shutdown(self) -> None:
-        """Finaliza o router."""
+        """_summary_
+        """
         await self._client.aclose()
         logger.info("router_shutdown_complete")

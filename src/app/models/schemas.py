@@ -4,6 +4,31 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field, HttpUrl, validator
 from enum import Enum
 
+class MCPServerConfig(BaseModel):
+    name: str
+    url: HttpUrl
+    description: Optional[str] = None
+    enabled: bool = True
+    timeout: int = 30
+    retry_attempts: int = 3
+
+    endpoints: Dict[str, str] = {
+        "health": "/health",
+        "tools": "/tools",
+        "call": "/call"
+    }
+
+    response_map: Dict[str, str] = {
+        "tools_key": "tools",
+        "tool_name_field": "name",
+        "tool_desc_field": "description"
+    }
+
+    payload_map: Dict[str, str] = {
+        "tool_field": "tool",
+        "args_field": "arguments"
+    }
+
 
 class ServerStatus(str, Enum):
     """Status do servidor MCP."""
@@ -11,22 +36,6 @@ class ServerStatus(str, Enum):
     OFFLINE = "offline"
     ERROR = "error"
     CONNECTING = "connecting"
-
-
-class MCPServerConfig(BaseModel):
-    """Configuração de um servidor MCP."""
-    name: str = Field(..., description="Nome único do servidor")
-    url: HttpUrl = Field(..., description="URL do servidor MCP")
-    description: str = Field("", description="Descrição do servidor")
-    enabled: bool = Field(True, description="Se o servidor está habilitado")
-    timeout: int = Field(30, ge=1, le=300, description="Timeout em segundos")
-    retry_attempts: int = Field(3, ge=0, le=10, description="Tentativas de retry")
-    
-    @validator('name')
-    def validate_name(cls, v):
-        if not v.replace('_', '').replace('-', '').isalnum():
-            raise ValueError('Nome deve conter apenas letras, números, _ e -')
-        return v.lower()
 
 
 class MCPServerInfo(BaseModel):

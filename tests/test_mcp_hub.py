@@ -1,4 +1,4 @@
-"""Tests for MCP Hub."""
+"""Tests for MCP one."""
 
 import pytest
 import asyncio
