@@ -11,6 +11,10 @@
 <b>MCP one</b> is a lightweight, extensible, and blazing-fast hub to manage multiple MCPs (Model Context Protocol) servers in a single place.  
 </p>
 
+<div align="center">
+<img src="mcpimg.png" alt="Logo MCP One" width="400">
+</div>
+
 ---
 
 ## 🚀 Key Features
