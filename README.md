@@ -12,7 +12,7 @@
 </p>
 
 <div align="center">
-<img src="mcpimg.png" alt="Logo MCP One" width="400">
+<img src="mcp-logo-img.png" alt="Logo MCP One" width="400">
 </div>
 
 ---
