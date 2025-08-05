@@ -1,4 +1,6 @@
-# ✨ MCP one – A Unified Hub for MCP Servers
+<div align="center">
+    <h1> ✨ MCP one – A Unified Hub for MCP Servers </h1>
+</div>  
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-MVP%20Ready-brightgreen?style=for-the-badge" alt="status"/>
@@ -12,7 +14,7 @@
 </p>
 
 <div align="center">
-<img src="mcp-logo-img.png" alt="Logo MCP One" width="400">
+<img src="mcp-one-img.png" alt="Logo MCP One" width="400">
 </div>
 
 ---
