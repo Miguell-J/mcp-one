@@ -1,13 +1,13 @@
 """Main FastAPI application."""
 
-import asyncio
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Any, Dict, Optional
 from typing import List
 import yaml
 import structlog
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -31,12 +31,18 @@ BASE_DIR = Path(__file__).resolve().parent
 # Volta uma pasta (de app/ para src/)
 CONFIG_PATH = BASE_DIR.parent / "config.yaml"
 
-try:
-    with open(CONFIG_PATH, "r") as f:
-        config = yaml.safe_load(f)
-except FileNotFoundError:
-    print(f"❌ config.yaml file not in {CONFIG_PATH}")
-    config = {}
+config = {}
+
+
+def load_runtime_config() -> Dict[str, Any]:
+    """Load runtime configuration from CONFIG_PATH."""
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        logger.warning("config_file_not_found", path=str(CONFIG_PATH))
+        return {}
+
 
 # Configurar logging
 structlog.configure(
@@ -63,6 +69,11 @@ logger = structlog.get_logger(__name__)
 registry: MCPRegistry
 router: MCPRouter
 start_time: float = time.time()
+config: Dict[str, Any] = load_runtime_config()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
 config: dict = {}
 
 
@@ -72,14 +83,9 @@ async def lifespan(app: FastAPI):
     global registry, router, start_time, config
     
     start_time = time.time()
-    
+
     # Carrega configuração
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        print(f"❌ config.yaml file not in {CONFIG_PATH}")
-        config = {}
+    config = load_runtime_config()
 
     
     # Inicializa registry e router
@@ -140,7 +146,7 @@ def get_router() -> MCPRouter:
 
 # Exception handlers
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
+async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
@@ -152,7 +158,7 @@ async def http_exception_handler(request, exc):
 
 
 @app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
+async def general_exception_handler(request: Request, exc: Exception):
     logger.error("unhandled_exception", error=str(exc), path=request.url.path)
     return JSONResponse(
         status_code=500,
@@ -204,7 +210,7 @@ async def get_status(reg: MCPRegistry = Depends(get_registry)):
 
 @app.get("/tools", response_model=ListToolsResponse)
 async def list_tools(
-    server: str = None,
+    server: Optional[str] = None,
     reg: MCPRegistry = Depends(get_registry)
 ):
     """Lista todas as ferramentas disponíveis."""
@@ -243,8 +249,12 @@ async def refresh_servers(reg: MCPRegistry = Depends(get_registry)):
 
 
 def main():
-    """Função principal para executar o servidor."""
+    """Run the service using runtime hub configuration."""
     import uvicorn
+
+    runtime_config = load_runtime_config()
+    hub_config = runtime_config.get("hub", {})
+
     
     # Carrega configuração
     try:
@@ -260,8 +270,8 @@ def main():
         "app.main:app",
         host=hub_config.get("host", "0.0.0.0"),
         port=hub_config.get("port", 8000),
-        reload=hub_config.get("debug", False),
-        log_level=hub_config.get("log_level", "info").lower()
+        reload=False,
+        log_level=hub_config.get("log_level", "info").lower(),
     )
 
 

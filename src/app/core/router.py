@@ -1,7 +1,7 @@
 """Router para executar ferramentas MCP."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 import httpx
 import structlog
 from app.models.schemas import ToolCallRequest, ToolCallResponse, ServerStatus
@@ -75,7 +75,7 @@ class MCPRouter:
             
             return response
             
-        except Exception as e:
+        except (httpx.RequestError, ValueError, TypeError) as e:
             logger.error(
                 "tool_execution_failed",
                 tool_name=request.tool,
@@ -133,7 +133,7 @@ class MCPRouter:
                 error="timeout",
                 server_name=""
             )
-        except Exception as e:
+        except httpx.RequestError as e:
             return ToolCallResponse(
                 success=False,
                 error=str(e),
