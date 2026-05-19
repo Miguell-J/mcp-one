@@ -3,7 +3,7 @@
 import asyncio
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import List
 import yaml
 import structlog
@@ -19,6 +19,7 @@ from app.models.schemas import (
     ListToolsResponse,
     HubStatus,
     ErrorResponse,
+    ServerStatus,
 )
 from app.core.registry import MCPRegistry
 from app.core.router import MCPRouter
@@ -61,17 +62,13 @@ logger = structlog.get_logger(__name__)
 # Variáveis globais
 registry: MCPRegistry
 router: MCPRouter
-start_time: float
-config: dict
+start_time: float = time.time()
+config: dict = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """_summary_
-
-    Args:
-        app (FastAPI): _description_
-    """
+    """Initialize and tear down shared application resources."""
     global registry, router, start_time, config
     
     start_time = time.time()
@@ -149,8 +146,8 @@ async def http_exception_handler(request, exc):
         content=ErrorResponse(
             error="http_error",
             message=exc.detail,
-            timestamp=datetime.utcnow().isoformat()
-        ).dict()
+            timestamp=datetime.now(UTC).isoformat()
+        ).model_dump()
     )
 
 
@@ -162,19 +159,15 @@ async def general_exception_handler(request, exc):
         content=ErrorResponse(
             error="internal_error",
             message="Internal server error",
-            timestamp=datetime.utcnow().isoformat()
-        ).dict()
+            timestamp=datetime.now(UTC).isoformat()
+        ).model_dump()
     )
 
 
 # Endpoints
 @app.get("/")
 async def root():
-    """_summary_
-
-    Returns:
-        _type_: _description_
-    """
+    """Return basic metadata and health of the hub service."""
     return {
         "name": "MCP one",
         "version": __version__,
@@ -188,7 +181,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "uptime_seconds": time.time() - start_time
     }
 
@@ -203,9 +196,9 @@ async def get_status(reg: MCPRegistry = Depends(get_registry)):
         version=__version__,
         uptime_seconds=time.time() - start_time,
         servers_count=len(servers),
-        servers_online=len([s for s in servers if s.status == "online"]),
+        servers_online=len([s for s in servers if s.status == ServerStatus.ONLINE]),
         tools_count=len(tools),
-        last_refresh=datetime.utcnow().isoformat()
+        last_refresh=datetime.now(UTC).isoformat()
     )
 
 
@@ -221,8 +214,8 @@ async def list_tools(
     return ListToolsResponse(
         tools=tools,
         total_count=len(tools),
-        servers_online=len([s for s in servers if s.status == "online"]),
-        last_updated=datetime.utcnow().isoformat()
+        servers_online=len([s for s in servers if s.status == ServerStatus.ONLINE]),
+        last_updated=datetime.now(UTC).isoformat()
     )
 
 
@@ -255,7 +248,7 @@ def main():
     
     # Carrega configuração
     try:
-        with open("src/config.yaml", "r") as f:
+        with open(CONFIG_PATH, "r") as f:
             config = yaml.safe_load(f)
     except FileNotFoundError:
         print("❌ config.yaml file not found!")

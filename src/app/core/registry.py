@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Dict, List, Optional, Set
 import httpx
 import structlog
@@ -17,8 +17,7 @@ logger = structlog.get_logger(__name__)
 
 
 class MCPRegistry:
-    """_summary_
-    """
+    """Maintain MCP server registrations, status, and tool catalogs."""
     
     def __init__(self):
         self.servers: Dict[str, MCPServerInfo] = {}
@@ -29,14 +28,7 @@ class MCPRegistry:
         self._shutdown = False
         
     async def register_server(self, config: MCPServerConfig) -> bool:
-        """_summary_
-
-        Args:
-            config (MCPServerConfig): _description_
-
-        Returns:
-            bool: _description_
-        """
+        """Register a server and perform initial health/tool discovery."""
         try:
             server_info = MCPServerInfo(
                 config=config,
@@ -64,14 +56,7 @@ class MCPRegistry:
             return False
     
     async def unregister_server(self, server_name: str) -> bool:
-        """_summary_
-
-        Args:
-            server_name (str): _description_
-
-        Returns:
-            bool: _description_
-        """
+        """Unregister a server and remove all its indexed tools."""
         if server_name not in self.servers:
             return False
             
@@ -169,7 +154,6 @@ class MCPRegistry:
         start_time = time.time()
         
         try:
-            base_url = str(server_info.config.url).rstrip("/")
             endpoints = config.endpoints
             health_endpoint = endpoints.get("health", "/health")
             base_url = str(config.url).rstrip("/")
@@ -178,7 +162,7 @@ class MCPRegistry:
             if response.status_code == 200:
                 server_info.status = ServerStatus.ONLINE
                 server_info.response_time_ms = (time.time() - start_time) * 1000
-                server_info.last_seen = datetime.utcnow().isoformat()
+                server_info.last_seen = datetime.now(UTC).isoformat()
                 server_info.error_message = None
                 
                 # Atualiza ferramentas

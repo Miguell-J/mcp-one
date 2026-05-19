@@ -171,7 +171,7 @@ class TestFastAPIEndpoints:
         response = client.get("/")
         assert response.status_code == 200
         data = response.json()
-        assert data["name"] == "MCP Hub"
+        assert data["name"] == "MCP one"
         assert "version" in data
     
     def test_health_endpoint(self, client):
