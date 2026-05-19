@@ -11,6 +11,8 @@ class MCPServerConfig(BaseModel):
     enabled: bool = True
     timeout: int = 30
     retry_attempts: int = 3
+    circuit_breaker_failures: int = 5
+    circuit_breaker_reset_seconds: int = 30
 
     endpoints: Dict[str, str] = {
         "health": "/health",

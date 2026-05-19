@@ -117,6 +117,52 @@ def protect_request(request: Request) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+
+
+# in-memory runtime controls
+_request_buckets: Dict[str, deque] = defaultdict(deque)
+_metrics: Dict[str, int] = defaultdict(int)
+
+
+def _authorize_request(request: Request) -> None:
+    """Authorize incoming request when API key is configured."""
+    api_key = config.get("hub", {}).get("api_key")
+    if not api_key:
+        return
+    provided = request.headers.get("x-api-key")
+    if provided != api_key:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    """Apply simple in-memory per-client rate limiting."""
+    rl = config.get("rate_limit", {})
+    if not rl.get("enabled", False):
+        return
+
+    limit = int(rl.get("requests_per_minute", 100))
+    now = time.time()
+    client = request.client.host if request.client else "unknown"
+    bucket = _request_buckets[client]
+
+    while bucket and now - bucket[0] > 60:
+        bucket.popleft()
+
+    if len(bucket) >= limit:
+        raise HTTPException(status_code=429, detail="rate_limit_exceeded")
+
+    bucket.append(now)
+
+
+def protect_request(request: Request) -> None:
+    """Run request protections: auth then rate limit."""
+    _authorize_request(request)
+    _enforce_rate_limit(request)
+
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
 config: dict = {}
@@ -332,6 +378,7 @@ async def metrics(request: Request):
         "call_success_total": _metrics.get("call_success_total", 0),
         "call_failure_total": _metrics.get("call_failure_total", 0),
         "tracked_clients": len(_request_buckets),
+        "open_circuits": len(getattr(router, "_circuit_open_until", {})) if "router" in globals() else 0,
     }
 
 
