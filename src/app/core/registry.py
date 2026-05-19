@@ -2,9 +2,10 @@
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Dict, List, Optional, Set
 import httpx
+from httpx import HTTPStatusError, RequestError
 import structlog
 from app.models.schemas import (
     MCPServerConfig,
@@ -17,8 +18,7 @@ logger = structlog.get_logger(__name__)
 
 
 class MCPRegistry:
-    """_summary_
-    """
+    """Maintain MCP server registrations, status, and tool catalogs."""
     
     def __init__(self):
         self.servers: Dict[str, MCPServerInfo] = {}
@@ -29,14 +29,7 @@ class MCPRegistry:
         self._shutdown = False
         
     async def register_server(self, config: MCPServerConfig) -> bool:
-        """_summary_
-
-        Args:
-            config (MCPServerConfig): _description_
-
-        Returns:
-            bool: _description_
-        """
+        """Register a server and perform initial health/tool discovery."""
         try:
             server_info = MCPServerInfo(
                 config=config,
@@ -64,14 +57,7 @@ class MCPRegistry:
             return False
     
     async def unregister_server(self, server_name: str) -> bool:
-        """_summary_
-
-        Args:
-            server_name (str): _description_
-
-        Returns:
-            bool: _description_
-        """
+        """Unregister a server and remove all its indexed tools."""
         if server_name not in self.servers:
             return False
             
@@ -89,44 +75,19 @@ class MCPRegistry:
         return True
     
     async def get_server_info(self, server_name: str) -> Optional[MCPServerInfo]:
-        """_summary_
-
-        Args:
-            server_name (str): _description_
-
-        Returns:
-            Optional[MCPServerInfo]: _description_
-        """
+        """Return metadata for a registered server by name."""
         return self.servers.get(server_name)
     
     async def list_servers(self) -> List[MCPServerInfo]:
-        """_summary_
-
-        Returns:
-            List[MCPServerInfo]: _description_
-        """
+        """List all registered MCP servers."""
         return list(self.servers.values())
     
     async def get_tool(self, tool_full_name: str) -> Optional[ToolSchema]:
-        """_summary_
-
-        Args:
-            tool_full_name (str): _description_
-
-        Returns:
-            Optional[ToolSchema]: _description_
-        """
+        """Return a tool schema by its fully qualified name."""
         return self.tools.get(tool_full_name)
     
     async def list_tools(self, server_name: Optional[str] = None) -> List[ToolSchema]:
-        """_summary_
-
-        Args:
-            server_name (Optional[str], optional): _description_. Defaults to None.
-
-        Returns:
-            List[ToolSchema]: _description_
-        """
+        """List tool schemas, optionally filtered by server."""
         if server_name:
             return [
                 tool for tool in self.tools.values()
@@ -135,8 +96,7 @@ class MCPRegistry:
         return list(self.tools.values())
     
     async def refresh_all_servers(self) -> None:
-        """_summary_
-        """
+        """Refresh health and tool catalogs for all servers."""
         tasks = [
             self._check_server_health(server_name)
             for server_name in self.servers.keys()
@@ -152,11 +112,7 @@ class MCPRegistry:
         )
     
     async def _check_server_health(self, server_name: str) -> None:
-        """_summary_
-
-        Args:
-            server_name (str): _description_
-        """
+        """Update health state for a server and refresh its tools when online."""
         server_info = self.servers.get(server_name)
         if not server_info:
             return
@@ -169,16 +125,24 @@ class MCPRegistry:
         start_time = time.time()
         
         try:
-            base_url = str(server_info.config.url).rstrip("/")
             endpoints = config.endpoints
             health_endpoint = endpoints.get("health", "/health")
             base_url = str(config.url).rstrip("/")
-            response = await self._client.get(f"{base_url}{health_endpoint}", timeout=config.timeout)
+            response = None
+            for attempt in range(max(1, config.retry_attempts)):
+                try:
+                    response = await self._client.get(f"{base_url}{health_endpoint}", timeout=config.timeout)
+                    response.raise_for_status()
+                    break
+                except (RequestError, HTTPStatusError) as exc:
+                    if attempt == config.retry_attempts - 1:
+                        raise exc
+                    await asyncio.sleep(min(0.2 * (attempt + 1), 1.0))
 
-            if response.status_code == 200:
+            if response and response.status_code == 200:
                 server_info.status = ServerStatus.ONLINE
                 server_info.response_time_ms = (time.time() - start_time) * 1000
-                server_info.last_seen = datetime.utcnow().isoformat()
+                server_info.last_seen = datetime.now(UTC).isoformat()
                 server_info.error_message = None
                 
                 # Atualiza ferramentas
@@ -199,11 +163,7 @@ class MCPRegistry:
             )
     
     async def _refresh_server_tools(self, server_name: str) -> None:
-        """_summary_
-
-        Args:
-            server_name (str): _description_
-        """
+        """Fetch and normalize tools from a specific online MCP server."""
         server_info = self.servers.get(server_name)
         if not server_info or server_info.status != ServerStatus.ONLINE:
             return
@@ -266,11 +226,7 @@ class MCPRegistry:
             )
     
     async def start_background_refresh(self, interval: int = 60) -> None:
-        """_summary_
-
-        Args:
-            interval (int, optional): _description_. Defaults to 60.
-        """
+        """Start periodic background refresh for server health and tools."""
         if self._refresh_task and not self._refresh_task.done():
             return
             
@@ -281,11 +237,7 @@ class MCPRegistry:
         logger.info("background_refresh_started", interval=interval)
     
     async def _background_refresh_loop(self, interval: int) -> None:
-        """_summary_
-
-        Args:
-            interval (int): _description_
-        """
+        """Run periodic refresh loop until shutdown is requested."""
         while not self._shutdown:
             try:
                 await self.refresh_all_servers()
@@ -295,8 +247,7 @@ class MCPRegistry:
                 await asyncio.sleep(5)  # Retry em 5 segundos
     
     async def shutdown(self) -> None:
-        """_summary_
-        """
+        """Stop background tasks and close HTTP resources."""
         self._shutdown = True
         
         if self._refresh_task and not self._refresh_task.done():
