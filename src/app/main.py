@@ -4,6 +4,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Dict, Optional
+from typing import List
 import yaml
 import structlog
 from fastapi import FastAPI, HTTPException, Depends, Request
@@ -73,6 +74,11 @@ config: Dict[str, Any] = load_runtime_config()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+config: dict = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Initialize and tear down shared application resources."""
     global registry, router, start_time, config
     
@@ -249,6 +255,17 @@ def main():
     runtime_config = load_runtime_config()
     hub_config = runtime_config.get("hub", {})
 
+    
+    # Carrega configuração
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        print("❌ config.yaml file not found!")
+        return
+    
+    hub_config = config.get("hub", {})
+    
     uvicorn.run(
         "app.main:app",
         host=hub_config.get("host", "0.0.0.0"),
