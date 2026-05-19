@@ -25,7 +25,8 @@
 ✅ **M × N → M + N:** Connect clients to a single hub instead of integrating each MCP directly.
 ✅ **Unified API:** Standardized `/tools`, `/call`, and `/servers` endpoints, regardless of underlying MCP differences.
 ✅ **Dynamic Endpoint Mapping:** Each MCP can expose custom routes or payloads. Map them with `endpoints`, `response_map`, and `payload_map`.
-✅ **Health Monitoring:** Built-in `/health` and `/status` to monitor all connected servers.
+✅ **Health Monitoring:** Built-in `/health`, `/ready`, and `/status` to monitor all connected servers.
+✅ **Operational Hardening (Phase 4):** API-key/Bearer auth, rate limiting, circuit breaker, and Prometheus-friendly metrics.
 ✅ **Async & Scalable:** Built with FastAPI, `httpx`, and asyncio for top performance.
 ✅ **Plug & Play:** Works with any MCP server (GitHub MCP, SQL MCP, Jupyter MCP, or your own).
 
@@ -129,6 +130,9 @@ http://localhost:8000
 | `/servers/refresh` | POST   | Force refresh of all servers and tools        |
 | `/tools`           | GET    | List all available tools (across all servers) |
 | `/call`            | POST   | Execute a tool on a specific server           |
+| `/ready`           | GET    | Readiness probe for orchestrators             |
+| `/metrics`         | GET    | JSON runtime metrics                           |
+| `/metrics/prometheus` | GET | Prometheus plaintext metrics                  |
 
 ### 🛠 Example: Call a tool
 
@@ -151,6 +155,54 @@ curl -X POST http://localhost:8000/call \
   "execution_time_ms": 8.37
 }
 ```
+
+---
+
+
+## 🔒 Production Security & Reliability (Phase 4)
+
+You can now configure request protection and resiliency controls:
+
+```yaml
+hub:
+  api_key: "your-shared-key"        # optional
+  bearer_token: "your-bearer-token" # optional
+
+rate_limit:
+  enabled: true
+  requests_per_minute: 100
+
+servers:
+  - name: dummy
+    url: http://localhost:7000
+    retry_attempts: 3
+    circuit_breaker_failures: 5
+    circuit_breaker_reset_seconds: 30
+```
+
+If `api_key` is configured, clients must send `x-api-key`.
+If `bearer_token` is configured, clients must send `Authorization: Bearer <token>`.
+
+---
+
+## 🧠 LangChain Integration: Is it a good idea?
+
+Yes — integrating with LangChain is usually a smart next step **if** you need orchestration, memory, and tool routing for multi-step agents.
+
+Good reasons to integrate:
+- Reuse MCP one as a single tool gateway for multiple agents.
+- Simplify tool discovery (`/tools`) and invocation (`/call`) in agent chains.
+- Keep MCP server changes decoupled from your LangChain app.
+
+When to delay:
+- If your use-case is single-step and deterministic, direct API usage may stay simpler.
+- If latency budget is tight, validate chain overhead first.
+
+Recommended pattern:
+1. Wrap MCP one as a custom LangChain Tool provider.
+2. Cache `/tools` with refresh TTL.
+3. Route all tool calls through `/call` with retry + circuit-breaker awareness.
+4. Export `/metrics/prometheus` to your observability stack.
 
 ---
 

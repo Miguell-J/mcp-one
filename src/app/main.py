@@ -80,6 +80,45 @@ _metrics: Dict[str, int] = defaultdict(int)
 
 def _authorize_request(request: Request) -> None:
     """Authorize incoming request when API key is configured."""
+    hub = config.get("hub", {})
+    api_key = hub.get("api_key")
+    bearer_token = hub.get("bearer_token")
+
+    if api_key:
+        provided = request.headers.get("x-api-key")
+        if provided != api_key:
+            raise HTTPException(status_code=401, detail="unauthorized")
+
+    if bearer_token:
+        auth_header = request.headers.get("authorization", "")
+        expected = f"Bearer {bearer_token}"
+        if auth_header != expected:
+            raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    """Apply simple in-memory per-client rate limiting."""
+    rl = config.get("rate_limit", {})
+    if not rl.get("enabled", False):
+        return
+
+    limit = int(rl.get("requests_per_minute", 100))
+    now = time.time()
+    client = request.client.host if request.client else "unknown"
+    bucket = _request_buckets[client]
+
+    while bucket and now - bucket[0] > 60:
+        bucket.popleft()
+
+
+
+# in-memory runtime controls
+_request_buckets: Dict[str, deque] = defaultdict(deque)
+_metrics: Dict[str, int] = defaultdict(int)
+
+
+def _authorize_request(request: Request) -> None:
+    """Authorize incoming request when API key is configured."""
     api_key = config.get("hub", {}).get("api_key")
     if not api_key:
         return
@@ -380,6 +419,30 @@ async def metrics(request: Request):
         "tracked_clients": len(_request_buckets),
         "open_circuits": len(getattr(router, "_circuit_open_until", {})) if "router" in globals() else 0,
     }
+
+
+@app.get("/metrics/prometheus")
+async def metrics_prometheus(request: Request):
+    """Prometheus-compatible plaintext metrics endpoint."""
+    protect_request(request)
+    lines = [
+        "# HELP mcp_one_uptime_seconds Uptime in seconds",
+        "# TYPE mcp_one_uptime_seconds gauge",
+        f"mcp_one_uptime_seconds {time.time() - start_time}",
+        "# HELP mcp_one_call_requests_total Total call requests",
+        "# TYPE mcp_one_call_requests_total counter",
+        f"mcp_one_call_requests_total {_metrics.get('call_requests_total', 0)}",
+        "# HELP mcp_one_call_success_total Total successful call requests",
+        "# TYPE mcp_one_call_success_total counter",
+        f"mcp_one_call_success_total {_metrics.get('call_success_total', 0)}",
+        "# HELP mcp_one_call_failure_total Total failed call requests",
+        "# TYPE mcp_one_call_failure_total counter",
+        f"mcp_one_call_failure_total {_metrics.get('call_failure_total', 0)}",
+        "# HELP mcp_one_open_circuits Number of open upstream circuits",
+        "# TYPE mcp_one_open_circuits gauge",
+        f"mcp_one_open_circuits {len(getattr(router, '_circuit_open_until', {})) if 'router' in globals() else 0}",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def main():
