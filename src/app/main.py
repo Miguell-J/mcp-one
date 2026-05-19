@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Dict, Optional
+from typing import List
 import yaml
 import structlog
 from fastapi import FastAPI, HTTPException, Depends, Request
@@ -116,6 +117,13 @@ def protect_request(request: Request) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+config: dict = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Initialize and tear down shared application resources."""
     global registry, router, start_time, config
     
@@ -211,6 +219,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.get("/")
 async def root(request: Request):
     protect_request(request)
+async def root():
     """Return basic metadata and health of the hub service."""
     return {
         "name": "MCP one",
@@ -333,6 +342,17 @@ def main():
     runtime_config = load_runtime_config()
     hub_config = runtime_config.get("hub", {})
 
+    
+    # Carrega configuração
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        print("❌ config.yaml file not found!")
+        return
+    
+    hub_config = config.get("hub", {})
+    
     uvicorn.run(
         "app.main:app",
         host=hub_config.get("host", "0.0.0.0"),
