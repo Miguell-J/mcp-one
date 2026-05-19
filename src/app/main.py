@@ -1,13 +1,12 @@
 """Main FastAPI application."""
 
-import asyncio
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
-from typing import List
+from datetime import UTC, datetime
+from typing import Any, Dict, Optional
 import yaml
 import structlog
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -19,6 +18,7 @@ from app.models.schemas import (
     ListToolsResponse,
     HubStatus,
     ErrorResponse,
+    ServerStatus,
 )
 from app.core.registry import MCPRegistry
 from app.core.router import MCPRouter
@@ -30,12 +30,18 @@ BASE_DIR = Path(__file__).resolve().parent
 # Volta uma pasta (de app/ para src/)
 CONFIG_PATH = BASE_DIR.parent / "config.yaml"
 
-try:
-    with open(CONFIG_PATH, "r") as f:
-        config = yaml.safe_load(f)
-except FileNotFoundError:
-    print(f"❌ config.yaml file not in {CONFIG_PATH}")
-    config = {}
+config = {}
+
+
+def load_runtime_config() -> Dict[str, Any]:
+    """Load runtime configuration from CONFIG_PATH."""
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        logger.warning("config_file_not_found", path=str(CONFIG_PATH))
+        return {}
+
 
 # Configurar logging
 structlog.configure(
@@ -61,28 +67,19 @@ logger = structlog.get_logger(__name__)
 # Variáveis globais
 registry: MCPRegistry
 router: MCPRouter
-start_time: float
-config: dict
+start_time: float = time.time()
+config: Dict[str, Any] = load_runtime_config()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """_summary_
-
-    Args:
-        app (FastAPI): _description_
-    """
+async def lifespan(_app: FastAPI):
+    """Initialize and tear down shared application resources."""
     global registry, router, start_time, config
     
     start_time = time.time()
-    
+
     # Carrega configuração
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        print(f"❌ config.yaml file not in {CONFIG_PATH}")
-        config = {}
+    config = load_runtime_config()
 
     
     # Inicializa registry e router
@@ -143,38 +140,34 @@ def get_router() -> MCPRouter:
 
 # Exception handlers
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
+async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
             error="http_error",
             message=exc.detail,
-            timestamp=datetime.utcnow().isoformat()
-        ).dict()
+            timestamp=datetime.now(UTC).isoformat()
+        ).model_dump()
     )
 
 
 @app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
+async def general_exception_handler(request: Request, exc: Exception):
     logger.error("unhandled_exception", error=str(exc), path=request.url.path)
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
             error="internal_error",
             message="Internal server error",
-            timestamp=datetime.utcnow().isoformat()
-        ).dict()
+            timestamp=datetime.now(UTC).isoformat()
+        ).model_dump()
     )
 
 
 # Endpoints
 @app.get("/")
 async def root():
-    """_summary_
-
-    Returns:
-        _type_: _description_
-    """
+    """Return basic metadata and health of the hub service."""
     return {
         "name": "MCP one",
         "version": __version__,
@@ -188,7 +181,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "uptime_seconds": time.time() - start_time
     }
 
@@ -203,15 +196,15 @@ async def get_status(reg: MCPRegistry = Depends(get_registry)):
         version=__version__,
         uptime_seconds=time.time() - start_time,
         servers_count=len(servers),
-        servers_online=len([s for s in servers if s.status == "online"]),
+        servers_online=len([s for s in servers if s.status == ServerStatus.ONLINE]),
         tools_count=len(tools),
-        last_refresh=datetime.utcnow().isoformat()
+        last_refresh=datetime.now(UTC).isoformat()
     )
 
 
 @app.get("/tools", response_model=ListToolsResponse)
 async def list_tools(
-    server: str = None,
+    server: Optional[str] = None,
     reg: MCPRegistry = Depends(get_registry)
 ):
     """Lista todas as ferramentas disponíveis."""
@@ -221,8 +214,8 @@ async def list_tools(
     return ListToolsResponse(
         tools=tools,
         total_count=len(tools),
-        servers_online=len([s for s in servers if s.status == "online"]),
-        last_updated=datetime.utcnow().isoformat()
+        servers_online=len([s for s in servers if s.status == ServerStatus.ONLINE]),
+        last_updated=datetime.now(UTC).isoformat()
     )
 
 
@@ -250,25 +243,18 @@ async def refresh_servers(reg: MCPRegistry = Depends(get_registry)):
 
 
 def main():
-    """Função principal para executar o servidor."""
+    """Run the service using runtime hub configuration."""
     import uvicorn
-    
-    # Carrega configuração
-    try:
-        with open("src/config.yaml", "r") as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        print("❌ config.yaml file not found!")
-        return
-    
-    hub_config = config.get("hub", {})
-    
+
+    runtime_config = load_runtime_config()
+    hub_config = runtime_config.get("hub", {})
+
     uvicorn.run(
         "app.main:app",
         host=hub_config.get("host", "0.0.0.0"),
         port=hub_config.get("port", 8000),
-        reload=hub_config.get("debug", False),
-        log_level=hub_config.get("log_level", "info").lower()
+        reload=False,
+        log_level=hub_config.get("log_level", "info").lower(),
     )
 
 
