@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Dict, Optional
+from typing import List
 import yaml
 import structlog
 from fastapi import FastAPI, HTTPException, Depends, Request
@@ -109,6 +110,37 @@ def _enforce_rate_limit(request: Request) -> None:
     while bucket and now - bucket[0] > 60:
         bucket.popleft()
 
+
+
+# in-memory runtime controls
+_request_buckets: Dict[str, deque] = defaultdict(deque)
+_metrics: Dict[str, int] = defaultdict(int)
+
+
+def _authorize_request(request: Request) -> None:
+    """Authorize incoming request when API key is configured."""
+    api_key = config.get("hub", {}).get("api_key")
+    if not api_key:
+        return
+    provided = request.headers.get("x-api-key")
+    if provided != api_key:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    """Apply simple in-memory per-client rate limiting."""
+    rl = config.get("rate_limit", {})
+    if not rl.get("enabled", False):
+        return
+
+    limit = int(rl.get("requests_per_minute", 100))
+    now = time.time()
+    client = request.client.host if request.client else "unknown"
+    bucket = _request_buckets[client]
+
+    while bucket and now - bucket[0] > 60:
+        bucket.popleft()
+
     if len(bucket) >= limit:
         raise HTTPException(status_code=429, detail="rate_limit_exceeded")
 
@@ -124,6 +156,59 @@ def protect_request(request: Request) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+
+
+# in-memory runtime controls
+_request_buckets: Dict[str, deque] = defaultdict(deque)
+_metrics: Dict[str, int] = defaultdict(int)
+
+
+def _authorize_request(request: Request) -> None:
+    """Authorize incoming request when API key is configured."""
+    api_key = config.get("hub", {}).get("api_key")
+    if not api_key:
+        return
+    provided = request.headers.get("x-api-key")
+    if provided != api_key:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    """Apply simple in-memory per-client rate limiting."""
+    rl = config.get("rate_limit", {})
+    if not rl.get("enabled", False):
+        return
+
+    limit = int(rl.get("requests_per_minute", 100))
+    now = time.time()
+    client = request.client.host if request.client else "unknown"
+    bucket = _request_buckets[client]
+
+    while bucket and now - bucket[0] > 60:
+        bucket.popleft()
+
+    if len(bucket) >= limit:
+        raise HTTPException(status_code=429, detail="rate_limit_exceeded")
+
+    bucket.append(now)
+
+
+def protect_request(request: Request) -> None:
+    """Run request protections: auth then rate limit."""
+    _authorize_request(request)
+    _enforce_rate_limit(request)
+
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+config: dict = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Initialize and tear down shared application resources."""
     global registry, router, start_time, config
     
@@ -219,6 +304,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.get("/")
 async def root(request: Request):
     protect_request(request)
+async def root():
     """Return basic metadata and health of the hub service."""
     return {
         "name": "MCP one",
@@ -366,6 +452,17 @@ def main():
     runtime_config = load_runtime_config()
     hub_config = runtime_config.get("hub", {})
 
+    
+    # Carrega configuração
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        print("❌ config.yaml file not found!")
+        return
+    
+    hub_config = config.get("hub", {})
+    
     uvicorn.run(
         "app.main:app",
         host=hub_config.get("host", "0.0.0.0"),
