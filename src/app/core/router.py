@@ -4,7 +4,7 @@ import time
 from typing import Any, Dict, Optional
 import httpx
 import structlog
-from app.models.schemas import ToolCallRequest, ToolCallResponse
+from app.models.schemas import ToolCallRequest, ToolCallResponse, ServerStatus
 from app.core.registry import MCPRegistry
 from app.models.schemas import MCPServerConfig
 
@@ -12,22 +12,14 @@ logger = structlog.get_logger(__name__)
 
 
 class MCPRouter:
-    """_summary_
-    """
+    """Route tool calls from hub clients to MCP servers."""
     
     def __init__(self, registry: MCPRegistry):
         self.registry = registry
         self._client = httpx.AsyncClient(timeout=60.0)
     
     async def execute_tool(self, request: ToolCallRequest) -> ToolCallResponse:
-        """_summary_
-
-        Args:
-            request (ToolCallRequest): _description_
-
-        Returns:
-            ToolCallResponse: _description_
-        """
+        """Execute a tool call request against the resolved MCP server."""
         start_time = time.time()
         
         try:
@@ -52,7 +44,7 @@ class MCPRouter:
                 )
             
             # Verifica se servidor está online
-            if server_info.status != "online":
+            if server_info.status != ServerStatus.ONLINE:
                 return ToolCallResponse(
                     success=False,
                     error="server_offline",
@@ -103,16 +95,7 @@ class MCPRouter:
         tool_name: str,
         arguments: Dict[str, Any]
     ) -> ToolCallResponse:
-        """_summary_
-
-        Args:
-            config (MCPServerConfig): _description_
-            tool_name (str): _description_
-            arguments (Dict[str, Any]): _description_
-
-        Returns:
-            ToolCallResponse: _description_
-        """
+        """Perform the HTTP request to the target MCP server call endpoint."""
         base_url = str(config.url).rstrip("/")
         call_endpoint = config.endpoints.get("call", "/call")
 
@@ -159,7 +142,6 @@ class MCPRouter:
 
     
     async def shutdown(self) -> None:
-        """_summary_
-        """
+        """Close the shared HTTP client."""
         await self._client.aclose()
         logger.info("router_shutdown_complete")
