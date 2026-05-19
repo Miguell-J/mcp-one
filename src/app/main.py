@@ -1,13 +1,13 @@
 """Main FastAPI application."""
 
-import asyncio
 import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime
-from typing import List
+from datetime import UTC, datetime
+from typing import Any, Dict, Optional
 import yaml
 import structlog
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -19,6 +19,7 @@ from app.models.schemas import (
     ListToolsResponse,
     HubStatus,
     ErrorResponse,
+    ServerStatus,
 )
 from app.core.registry import MCPRegistry
 from app.core.router import MCPRouter
@@ -30,12 +31,18 @@ BASE_DIR = Path(__file__).resolve().parent
 # Volta uma pasta (de app/ para src/)
 CONFIG_PATH = BASE_DIR.parent / "config.yaml"
 
-try:
-    with open(CONFIG_PATH, "r") as f:
-        config = yaml.safe_load(f)
-except FileNotFoundError:
-    print(f"❌ config.yaml file not in {CONFIG_PATH}")
-    config = {}
+config = {}
+
+
+def load_runtime_config() -> Dict[str, Any]:
+    """Load runtime configuration from CONFIG_PATH."""
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        logger.warning("config_file_not_found", path=str(CONFIG_PATH))
+        return {}
+
 
 # Configurar logging
 structlog.configure(
@@ -61,28 +68,61 @@ logger = structlog.get_logger(__name__)
 # Variáveis globais
 registry: MCPRegistry
 router: MCPRouter
-start_time: float
-config: dict
+start_time: float = time.time()
+config: Dict[str, Any] = load_runtime_config()
+
+
+# in-memory runtime controls
+_request_buckets: Dict[str, deque] = defaultdict(deque)
+_metrics: Dict[str, int] = defaultdict(int)
+
+
+def _authorize_request(request: Request) -> None:
+    """Authorize incoming request when API key is configured."""
+    api_key = config.get("hub", {}).get("api_key")
+    if not api_key:
+        return
+    provided = request.headers.get("x-api-key")
+    if provided != api_key:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    """Apply simple in-memory per-client rate limiting."""
+    rl = config.get("rate_limit", {})
+    if not rl.get("enabled", False):
+        return
+
+    limit = int(rl.get("requests_per_minute", 100))
+    now = time.time()
+    client = request.client.host if request.client else "unknown"
+    bucket = _request_buckets[client]
+
+    while bucket and now - bucket[0] > 60:
+        bucket.popleft()
+
+    if len(bucket) >= limit:
+        raise HTTPException(status_code=429, detail="rate_limit_exceeded")
+
+    bucket.append(now)
+
+
+def protect_request(request: Request) -> None:
+    """Run request protections: auth then rate limit."""
+    _authorize_request(request)
+    _enforce_rate_limit(request)
+
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """_summary_
-
-    Args:
-        app (FastAPI): _description_
-    """
+async def lifespan(_app: FastAPI):
+    """Initialize and tear down shared application resources."""
     global registry, router, start_time, config
     
     start_time = time.time()
-    
+
     # Carrega configuração
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        print(f"❌ config.yaml file not in {CONFIG_PATH}")
-        config = {}
+    config = load_runtime_config()
 
     
     # Inicializa registry e router
@@ -143,38 +183,35 @@ def get_router() -> MCPRouter:
 
 # Exception handlers
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
+async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
             error="http_error",
             message=exc.detail,
-            timestamp=datetime.utcnow().isoformat()
-        ).dict()
+            timestamp=datetime.now(UTC).isoformat()
+        ).model_dump()
     )
 
 
 @app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
+async def general_exception_handler(request: Request, exc: Exception):
     logger.error("unhandled_exception", error=str(exc), path=request.url.path)
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
             error="internal_error",
             message="Internal server error",
-            timestamp=datetime.utcnow().isoformat()
-        ).dict()
+            timestamp=datetime.now(UTC).isoformat()
+        ).model_dump()
     )
 
 
 # Endpoints
 @app.get("/")
-async def root():
-    """_summary_
-
-    Returns:
-        _type_: _description_
-    """
+async def root(request: Request):
+    protect_request(request)
+    """Return basic metadata and health of the hub service."""
     return {
         "name": "MCP one",
         "version": __version__,
@@ -184,17 +221,19 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(request: Request):
+    protect_request(request)
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "uptime_seconds": time.time() - start_time
     }
 
 
 @app.get("/status", response_model=HubStatus)
-async def get_status(reg: MCPRegistry = Depends(get_registry)):
+async def get_status(request: Request, reg: MCPRegistry = Depends(get_registry)):
+    protect_request(request)
     """Retorna status detalhado do Hub."""
     servers = await reg.list_servers()
     tools = await reg.list_tools()
@@ -203,17 +242,19 @@ async def get_status(reg: MCPRegistry = Depends(get_registry)):
         version=__version__,
         uptime_seconds=time.time() - start_time,
         servers_count=len(servers),
-        servers_online=len([s for s in servers if s.status == "online"]),
+        servers_online=len([s for s in servers if s.status == ServerStatus.ONLINE]),
         tools_count=len(tools),
-        last_refresh=datetime.utcnow().isoformat()
+        last_refresh=datetime.now(UTC).isoformat()
     )
 
 
 @app.get("/tools", response_model=ListToolsResponse)
 async def list_tools(
-    server: str = None,
+    request: Request,
+    server: Optional[str] = None,
     reg: MCPRegistry = Depends(get_registry)
 ):
+    protect_request(request)
     """Lista todas as ferramentas disponíveis."""
     tools = await reg.list_tools(server_name=server)
     servers = await reg.list_servers()
@@ -221,54 +262,84 @@ async def list_tools(
     return ListToolsResponse(
         tools=tools,
         total_count=len(tools),
-        servers_online=len([s for s in servers if s.status == "online"]),
-        last_updated=datetime.utcnow().isoformat()
+        servers_online=len([s for s in servers if s.status == ServerStatus.ONLINE]),
+        last_updated=datetime.now(UTC).isoformat()
     )
 
 
 @app.post("/call", response_model=ToolCallResponse)
 async def call_tool(
     request: ToolCallRequest,
+    http_request: Request,
     rt: MCPRouter = Depends(get_router)
 ):
     """Executa uma ferramenta em um servidor MCP."""
-    return await rt.execute_tool(request)
+    protect_request(http_request)
+    _metrics["call_requests_total"] += 1
+    response = await rt.execute_tool(request)
+    if response.success:
+        _metrics["call_success_total"] += 1
+    else:
+        _metrics["call_failure_total"] += 1
+    return response
 
 
 @app.get("/servers")
-async def list_servers(reg: MCPRegistry = Depends(get_registry)):
+async def list_servers(request: Request, reg: MCPRegistry = Depends(get_registry)):
+    protect_request(request)
     """Lista todos os servidores registrados."""
     servers = await reg.list_servers()
     return {"servers": servers}
 
 
 @app.post("/servers/refresh")
-async def refresh_servers(reg: MCPRegistry = Depends(get_registry)):
+async def refresh_servers(request: Request, reg: MCPRegistry = Depends(get_registry)):
+    protect_request(request)
     """Force refresh de todos os servidores."""
     await reg.refresh_all_servers()
     return {"message": "Servers refreshed successfully"}
 
 
+@app.get("/ready")
+async def readiness(request: Request):
+    """Readiness probe based on upstream MCP availability."""
+    protect_request(request)
+    servers = await registry.list_servers()
+    online = len([s for s in servers if s.status == ServerStatus.ONLINE])
+    return {
+        "ready": online > 0 if servers else True,
+        "servers_online": online,
+        "servers_total": len(servers),
+    }
+
+
+@app.get("/metrics")
+async def metrics(request: Request):
+    """Basic operational metrics endpoint (JSON)."""
+    protect_request(request)
+    return {
+        "uptime_seconds": time.time() - start_time,
+        "call_requests_total": _metrics.get("call_requests_total", 0),
+        "call_success_total": _metrics.get("call_success_total", 0),
+        "call_failure_total": _metrics.get("call_failure_total", 0),
+        "tracked_clients": len(_request_buckets),
+        "open_circuits": len(getattr(router, "_circuit_open_until", {})) if "router" in globals() else 0,
+    }
+
+
 def main():
-    """Função principal para executar o servidor."""
+    """Run the service using runtime hub configuration."""
     import uvicorn
-    
-    # Carrega configuração
-    try:
-        with open("src/config.yaml", "r") as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        print("❌ config.yaml file not found!")
-        return
-    
-    hub_config = config.get("hub", {})
-    
+
+    runtime_config = load_runtime_config()
+    hub_config = runtime_config.get("hub", {})
+
     uvicorn.run(
         "app.main:app",
         host=hub_config.get("host", "0.0.0.0"),
         port=hub_config.get("port", 8000),
-        reload=hub_config.get("debug", False),
-        log_level=hub_config.get("log_level", "info").lower()
+        reload=False,
+        log_level=hub_config.get("log_level", "info").lower(),
     )
 
 

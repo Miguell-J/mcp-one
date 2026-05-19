@@ -1,7 +1,7 @@
 """Pydantic models for MCP Hub."""
 
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, HttpUrl, validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from enum import Enum
 
 class MCPServerConfig(BaseModel):
@@ -11,6 +11,8 @@ class MCPServerConfig(BaseModel):
     enabled: bool = True
     timeout: int = 30
     retry_attempts: int = 3
+    circuit_breaker_failures: int = 5
+    circuit_breaker_reset_seconds: int = 30
 
     endpoints: Dict[str, str] = {
         "health": "/health",
@@ -56,10 +58,12 @@ class ToolSchema(BaseModel):
     server_name: str = Field(..., description="Nome do servidor que possui a ferramenta")
     full_name: str = Field(..., description="Nome completo: server.tool")
     
-    @validator('full_name', pre=True, always=True)
-    def generate_full_name(cls, v, values):
-        if 'server_name' in values and 'name' in values:
-            return f"{values['server_name']}.{values['name']}"
+    @field_validator('full_name', mode='before')
+    @classmethod
+    def generate_full_name(cls, v, info):
+        data = info.data
+        if 'server_name' in data and 'name' in data:
+            return f"{data['server_name']}.{data['name']}"
         return v
 
 
@@ -68,7 +72,8 @@ class ToolCallRequest(BaseModel):
     tool: str = Field(..., description="Nome completo da ferramenta (server.tool)")
     arguments: Dict[str, Any] = Field(default_factory=dict, description="Argumentos da ferramenta")
     
-    @validator('tool')
+    @field_validator('tool')
+    @classmethod
     def validate_tool_name(cls, v):
         if '.' not in v:
             raise ValueError('Nome da ferramenta deve estar no formato: server.tool')
