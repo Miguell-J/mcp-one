@@ -1,6 +1,7 @@
 """Main FastAPI application."""
 
 import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Dict, Optional
@@ -72,6 +73,50 @@ start_time: float = time.time()
 config: Dict[str, Any] = load_runtime_config()
 
 
+# in-memory runtime controls
+_request_buckets: Dict[str, deque] = defaultdict(deque)
+_metrics: Dict[str, int] = defaultdict(int)
+
+
+def _authorize_request(request: Request) -> None:
+    """Authorize incoming request when API key is configured."""
+    api_key = config.get("hub", {}).get("api_key")
+    if not api_key:
+        return
+    provided = request.headers.get("x-api-key")
+    if provided != api_key:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    """Apply simple in-memory per-client rate limiting."""
+    rl = config.get("rate_limit", {})
+    if not rl.get("enabled", False):
+        return
+
+    limit = int(rl.get("requests_per_minute", 100))
+    now = time.time()
+    client = request.client.host if request.client else "unknown"
+    bucket = _request_buckets[client]
+
+    while bucket and now - bucket[0] > 60:
+        bucket.popleft()
+
+    if len(bucket) >= limit:
+        raise HTTPException(status_code=429, detail="rate_limit_exceeded")
+
+    bucket.append(now)
+
+
+def protect_request(request: Request) -> None:
+    """Run request protections: auth then rate limit."""
+    _authorize_request(request)
+    _enforce_rate_limit(request)
+
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
 config: dict = {}
@@ -172,6 +217,8 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # Endpoints
 @app.get("/")
+async def root(request: Request):
+    protect_request(request)
 async def root():
     """Return basic metadata and health of the hub service."""
     return {
@@ -183,7 +230,8 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(request: Request):
+    protect_request(request)
     """Health check endpoint."""
     return {
         "status": "healthy",
@@ -193,7 +241,8 @@ async def health_check():
 
 
 @app.get("/status", response_model=HubStatus)
-async def get_status(reg: MCPRegistry = Depends(get_registry)):
+async def get_status(request: Request, reg: MCPRegistry = Depends(get_registry)):
+    protect_request(request)
     """Retorna status detalhado do Hub."""
     servers = await reg.list_servers()
     tools = await reg.list_tools()
@@ -210,9 +259,11 @@ async def get_status(reg: MCPRegistry = Depends(get_registry)):
 
 @app.get("/tools", response_model=ListToolsResponse)
 async def list_tools(
+    request: Request,
     server: Optional[str] = None,
     reg: MCPRegistry = Depends(get_registry)
 ):
+    protect_request(request)
     """Lista todas as ferramentas disponíveis."""
     tools = await reg.list_tools(server_name=server)
     servers = await reg.list_servers()
@@ -228,24 +279,60 @@ async def list_tools(
 @app.post("/call", response_model=ToolCallResponse)
 async def call_tool(
     request: ToolCallRequest,
+    http_request: Request,
     rt: MCPRouter = Depends(get_router)
 ):
     """Executa uma ferramenta em um servidor MCP."""
-    return await rt.execute_tool(request)
+    protect_request(http_request)
+    _metrics["call_requests_total"] += 1
+    response = await rt.execute_tool(request)
+    if response.success:
+        _metrics["call_success_total"] += 1
+    else:
+        _metrics["call_failure_total"] += 1
+    return response
 
 
 @app.get("/servers")
-async def list_servers(reg: MCPRegistry = Depends(get_registry)):
+async def list_servers(request: Request, reg: MCPRegistry = Depends(get_registry)):
+    protect_request(request)
     """Lista todos os servidores registrados."""
     servers = await reg.list_servers()
     return {"servers": servers}
 
 
 @app.post("/servers/refresh")
-async def refresh_servers(reg: MCPRegistry = Depends(get_registry)):
+async def refresh_servers(request: Request, reg: MCPRegistry = Depends(get_registry)):
+    protect_request(request)
     """Force refresh de todos os servidores."""
     await reg.refresh_all_servers()
     return {"message": "Servers refreshed successfully"}
+
+
+@app.get("/ready")
+async def readiness(request: Request):
+    """Readiness probe based on upstream MCP availability."""
+    protect_request(request)
+    servers = await registry.list_servers()
+    online = len([s for s in servers if s.status == ServerStatus.ONLINE])
+    return {
+        "ready": online > 0 if servers else True,
+        "servers_online": online,
+        "servers_total": len(servers),
+    }
+
+
+@app.get("/metrics")
+async def metrics(request: Request):
+    """Basic operational metrics endpoint (JSON)."""
+    protect_request(request)
+    return {
+        "uptime_seconds": time.time() - start_time,
+        "call_requests_total": _metrics.get("call_requests_total", 0),
+        "call_success_total": _metrics.get("call_success_total", 0),
+        "call_failure_total": _metrics.get("call_failure_total", 0),
+        "tracked_clients": len(_request_buckets),
+    }
 
 
 def main():
