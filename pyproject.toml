@@ -1,112 +1,59 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.29.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "mcp-one"
-dynamic = ["version"]
-description = "Central hub for managing multiple MCP servers"
-readme = "README.rst"
-requires-python = ">=3.10"
+version = "1.0.0rc1"
+description = "Domain-independent native MCP gateway and control plane"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
 license = "MIT"
-keywords = ["mcp", "hub", "server", "ai", "tools"]
-authors = [
-    {name = "Miguel Araújo", email = "julioaraujo.guel@gmail.com"},
-]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Natural Language :: English",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
 dependencies = [
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "pydantic>=2.5.0",
-    "pyyaml>=6.0",
-    "aiofiles>=23.2.0",
-    "httpx>=0.25.0",
-    "structlog>=23.2.0",
-    "rich>=13.7.0",
+  "mcp==2.2.0", "mcp-types==2.2.0", "pydantic==2.13.5",
+  "httpx2==2.12.0", "uvicorn==0.52.4", "starlette==1.6.0",
+  "PyYAML==6.0.3", "jsonschema==4.26.0", "referencing==0.37.0",
+  "structlog==26.1.0", "prometheus-client>=0.22,<1",
+  "opentelemetry-sdk==1.44.0", "opentelemetry-exporter-otlp-proto-http==1.44.0",
 ]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.9.0",
-    "isort>=5.12.0",
-    "flake8>=6.1.0",
-    "mypy>=1.6.0",
-    "pre-commit>=3.5.0",
-]
-docs = [
-    "sphinx>=7.2.0",
-    "sphinx-rtd-theme>=1.3.0",
-]
-
-[project.urls]
-Homepage = "https://github.com/miguellj/mcp-one"
-Documentation = "https://mcp-one.readthedocs.io"
-Repository = "https://github.com/miguell-j/mcp-one"
-"Bug Tracker" = "https://github.com/miguell-j/mcp-one/issues"
 
 [project.scripts]
-mcp-one = "app.main:main"
+mcp-one = "mcp_one.server:main"
 
-[tool.hatch.version]
-path = "src/app/__init__.py"
+[dependency-groups]
+dev = [
+  "pytest==9.1.1", "pytest-asyncio==1.4.0", "pytest-cov==7.1.0",
+  "ruff==0.16.7", "mypy==2.3.1", "types-PyYAML==6.0.12.20260906",
+  "types-jsonschema==4.26.0.20260518", "httpx==0.28.1",
+]
 
-[tool.black]
-line-length = 88
-target-version = ['py310']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_one"]
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-addopts = "--cov=app --cov-report=term-missing --cov-report=html"
 asyncio_mode = "auto"
-pythonpath = ["src"]
+markers = ["contract: native SDK contract", "integration: real HTTP fault injection", "e2e: native client gateway downstream"]
+addopts = "-ra"
 
-[tool.mypy]
-python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
+[tool.coverage.run]
+source = ["mcp_one"]
+branch = true
+patch = ["subprocess"]
+sigterm = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

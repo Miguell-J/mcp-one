@@ -1,0 +1,452 @@
+{
+  "$defs": {
+    "AuthReference": {
+      "additionalProperties": false,
+      "properties": {
+        "bearer_token_env": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bearer Token Env"
+        }
+      },
+      "title": "AuthReference",
+      "type": "object"
+    },
+    "CircuitBreakerPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "failure_threshold": {
+          "default": 5,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Failure Threshold",
+          "type": "integer"
+        },
+        "reset_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Reset Seconds",
+          "type": "number"
+        }
+      },
+      "title": "CircuitBreakerPolicy",
+      "type": "object"
+    },
+    "HealthPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "interval_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Interval Seconds",
+          "type": "number"
+        }
+      },
+      "title": "HealthPolicy",
+      "type": "object"
+    },
+    "HubConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "default": "127.0.0.1",
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "default": 8000,
+          "maximum": 65535,
+          "minimum": 1024,
+          "title": "Port",
+          "type": "integer"
+        },
+        "allowed_hosts": {
+          "default": [
+            "127.0.0.1",
+            "localhost",
+            "[::1]",
+            "127.0.0.1:*",
+            "localhost:*",
+            "[::1]:*",
+            "mcp-one:*"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Hosts",
+          "type": "array"
+        },
+        "allowed_origins": {
+          "default": [
+            "http://127.0.0.1",
+            "http://localhost",
+            "http://127.0.0.1:*",
+            "http://localhost:*"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Origins",
+          "type": "array"
+        },
+        "auth": {
+          "$ref": "#/$defs/AuthReference"
+        },
+        "admin_auth": {
+          "$ref": "#/$defs/AuthReference"
+        },
+        "minimum_ready_servers": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Minimum Ready Servers",
+          "type": "integer"
+        }
+      },
+      "title": "HubConfig",
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "properties": {
+        "request_bytes": {
+          "default": 1048576,
+          "maximum": 16777216,
+          "minimum": 1024,
+          "title": "Request Bytes",
+          "type": "integer"
+        },
+        "response_bytes": {
+          "default": 8388608,
+          "maximum": 67108864,
+          "minimum": 1024,
+          "title": "Response Bytes",
+          "type": "integer"
+        },
+        "schema_bytes": {
+          "default": 131072,
+          "maximum": 1048576,
+          "minimum": 1024,
+          "title": "Schema Bytes",
+          "type": "integer"
+        },
+        "schema_depth": {
+          "default": 32,
+          "maximum": 64,
+          "minimum": 4,
+          "title": "Schema Depth",
+          "type": "integer"
+        },
+        "concurrent_calls": {
+          "default": 64,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Concurrent Calls",
+          "type": "integer"
+        }
+      },
+      "title": "Limits",
+      "type": "object"
+    },
+    "PolicyConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "default": [
+            "*"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Allow",
+          "type": "array"
+        },
+        "deny": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Deny",
+          "type": "array"
+        }
+      },
+      "title": "PolicyConfig",
+      "type": "object"
+    },
+    "RegistryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "refresh_interval_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Refresh Interval Seconds",
+          "type": "number"
+        },
+        "stale_seconds": {
+          "default": 300,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Stale Seconds",
+          "type": "number"
+        },
+        "minimum_refresh_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Minimum Refresh Seconds",
+          "type": "number"
+        },
+        "max_tools": {
+          "default": 1024,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Tools",
+          "type": "integer"
+        },
+        "max_pages": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Max Pages",
+          "type": "integer"
+        },
+        "max_catalog_bytes": {
+          "default": 8388608,
+          "maximum": 67108864,
+          "minimum": 1024,
+          "title": "Max Catalog Bytes",
+          "type": "integer"
+        }
+      },
+      "title": "RegistryConfig",
+      "type": "object"
+    },
+    "RetryPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "discovery_attempts": {
+          "default": 3,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Discovery Attempts",
+          "type": "integer"
+        },
+        "health_attempts": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Health Attempts",
+          "type": "integer"
+        },
+        "call_attempts": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Call Attempts",
+          "type": "integer"
+        },
+        "safe_tools": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Safe Tools",
+          "type": "array"
+        },
+        "backoff_seconds": {
+          "default": 0.2,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Backoff Seconds",
+          "type": "number"
+        }
+      },
+      "title": "RetryPolicy",
+      "type": "object"
+    },
+    "ServerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "namespace": {
+          "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "transport": {
+          "$ref": "#/$defs/TransportConfig"
+        },
+        "timeout": {
+          "$ref": "#/$defs/TimeoutPolicy"
+        },
+        "retry": {
+          "$ref": "#/$defs/RetryPolicy"
+        },
+        "circuit_breaker": {
+          "$ref": "#/$defs/CircuitBreakerPolicy"
+        },
+        "health": {
+          "$ref": "#/$defs/HealthPolicy"
+        },
+        "auth": {
+          "$ref": "#/$defs/AuthReference"
+        }
+      },
+      "required": [
+        "id",
+        "namespace",
+        "transport"
+      ],
+      "title": "ServerConfig",
+      "type": "object"
+    },
+    "ServerDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout": {
+          "$ref": "#/$defs/TimeoutPolicy"
+        },
+        "retry": {
+          "$ref": "#/$defs/RetryPolicy"
+        },
+        "circuit_breaker": {
+          "$ref": "#/$defs/CircuitBreakerPolicy"
+        },
+        "health": {
+          "$ref": "#/$defs/HealthPolicy"
+        }
+      },
+      "title": "ServerDefaults",
+      "type": "object"
+    },
+    "TimeoutPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "connect_seconds": {
+          "default": 3,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Connect Seconds",
+          "type": "number"
+        },
+        "discovery_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Discovery Seconds",
+          "type": "number"
+        },
+        "call_seconds": {
+          "default": 60,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Call Seconds",
+          "type": "number"
+        },
+        "health_seconds": {
+          "default": 3,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Health Seconds",
+          "type": "number"
+        }
+      },
+      "title": "TimeoutPolicy",
+      "type": "object"
+    },
+    "TransportConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "streamable_http",
+          "default": "streamable_http",
+          "title": "Type",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "TransportConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "hub": {
+      "$ref": "#/$defs/HubConfig"
+    },
+    "registry": {
+      "$ref": "#/$defs/RegistryConfig"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "policy": {
+      "$ref": "#/$defs/PolicyConfig"
+    },
+    "defaults": {
+      "$ref": "#/$defs/ServerDefaults"
+    },
+    "servers": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ServerConfig"
+      },
+      "maxItems": 100,
+      "title": "Servers",
+      "type": "array"
+    }
+  },
+  "title": "GatewayConfig",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

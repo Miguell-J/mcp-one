@@ -1,0 +1,15 @@
+version: 1
+hub:
+  host: 127.0.0.1
+  port: 8000
+registry:
+  refresh_interval_seconds: 30
+  stale_seconds: 300
+servers: []
+# Add native servers; /ready is 503 until at least one permitted tool is routable.
+# servers:
+#   - id: example
+#     namespace: example
+#     transport: {type: streamable_http, url: http://127.0.0.1:8080/mcp}
+#     timeout: {connect_seconds: 3, discovery_seconds: 5, call_seconds: 60, health_seconds: 3}
+#     auth: {bearer_token_env: EXAMPLE_MCP_TOKEN}
