@@ -1,9 +1,17 @@
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import (
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    ProcessCollector,
+    generate_latest,
+)
 
 
 class PrometheusMetrics:
     def __init__(self) -> None:
         self.registry = CollectorRegistry()
+        ProcessCollector(namespace="mcp_one", registry=self.registry)
         self.counters = {
             name: Counter(
                 f"mcp_one_{name}_total", name, ["server", "outcome"], registry=self.registry
@@ -27,7 +35,13 @@ class PrometheusMetrics:
         }
         self.gauges = {
             name: Gauge(f"mcp_one_{name}", name, ["server"], registry=self.registry)
-            for name in ("catalog_tools", "catalog_bytes", "server_health", "circuit_open")
+            for name in (
+                "catalog_tools",
+                "catalog_bytes",
+                "server_health",
+                "circuit_open",
+                "active_calls",
+            )
         }
 
     def increment(self, name: str, server: str = "", outcome: str = "") -> None:

@@ -45,7 +45,7 @@ files = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = ["contract: native SDK contract", "integration: real HTTP fault injection", "e2e: native client gateway downstream"]
+markers = ["contract: native SDK contract", "integration: real HTTP fault injection", "e2e: native client gateway downstream", "inspector: optional pinned JavaScript Inspector CLI"]
 addopts = "-ra"
 
 [tool.coverage.run]

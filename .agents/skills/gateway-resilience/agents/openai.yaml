@@ -1,0 +1,6 @@
+interface:
+  display_name: "gateway-resilience"
+  short_description: "Gateway resilience checks"
+  default_prompt: "Use $gateway-resilience for this repository and report actual validation evidence."
+policy:
+  allow_implicit_invocation: false

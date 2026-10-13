@@ -21,3 +21,11 @@ run:
 	.venv/bin/mcp-one
 build:
 	$(UV) build --no-sources
+
+.PHONY: tooling test-fast test-inspector
+tooling:
+	npm ci --ignore-scripts --prefix tooling
+test-fast:
+	.venv/bin/python -m pytest tests/test_core.py tests/test_resilience.py tests/test_security.py -q
+test-inspector:
+	MCP_INSPECTOR_TESTS=1 .venv/bin/python -m pytest tests/inspector -q

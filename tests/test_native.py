@@ -6,8 +6,13 @@ import httpx2
 import pytest
 from mcp import Client, MCPError
 from mcp.client.streamable_http import streamable_http_client
+from mcp.types import CallToolRequestParams
 
+from mcp_one.application.service import Gateway
+from mcp_one.config import GatewayConfig
 from mcp_one.domain.errors import ERROR_META, GATEWAY_META
+from mcp_one.infrastructure.client import SDKClientPool
+from mcp_one.observability.metrics import PrometheusMetrics
 
 pytestmark = [pytest.mark.contract, pytest.mark.integration, pytest.mark.e2e]
 
@@ -236,3 +241,46 @@ async def test_downstream_auth_reference_and_safe_diagnostics(topology, monkeypa
     topology.stop("gateway")
     logs = (topology.directory / "gateway.log").read_text()
     assert "fixture-downstream" not in logs and "private payload" not in logs
+
+
+async def test_real_http_cancellation_closes_operation_and_lifespan_pools(topology):
+    config = GatewayConfig.model_validate(topology.config)
+    pool = SDKClientPool(config)
+    gateway = Gateway(config, pool, PrometheusMetrics())
+    retained = []
+    async with gateway.lifespan():
+        retained.extend(pool.clients.values())
+        topology.mode("slow")
+        call = asyncio.create_task(
+            gateway.router.call(
+                CallToolRequestParams(
+                    name="demo.echo",
+                    arguments={"message": "cancel-request"},
+                )
+            )
+        )
+        try:
+            for _ in range(100):
+                if json.loads(topology.state.read_text())["calls"]:
+                    break
+                await asyncio.sleep(0.005)
+            assert json.loads(topology.state.read_text())["calls"] == 1
+            call.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await call
+            assert gateway.router.active == 0
+            assert gateway.router.circuits["fixture"].failures == 0
+            topology.mode("healthy")
+            assert not (
+                await gateway.router.call(
+                    CallToolRequestParams(
+                        name="demo.echo",
+                        arguments={"message": "pool-still-usable"},
+                    )
+                )
+            ).is_error
+        finally:
+            call.cancel()
+            await asyncio.gather(call, return_exceptions=True)
+    assert not pool.clients
+    assert retained and all(client.is_closed for client in retained)

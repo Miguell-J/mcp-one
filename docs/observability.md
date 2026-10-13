@@ -35,3 +35,16 @@ No label contains tool arguments, user IDs, request IDs, tokens or arbitrary too
 names. Configured server count and fixed outcome vocabulary bound cardinality.
 Result-cache metrics are absent because no result-cache mechanism exists.
 Administrative diagnostics are snapshots, not network probes at scrape time.
+
+Admission occupancy is available as `mcp_one_active_calls{server=""}`, one bounded
+global series. It includes admitted calls awaiting safe backoff and excludes
+rejections. Success, failure and cancellation release the gauge in `finally`.
+Cancelled calls now produce the same metadata-only gateway event, with `isError`
+null because no tool result completed. Route spans carry `mcp_one.server`,
+`mcp_one.outcome` and actual `mcp_one.attempts`; none contains tool arguments.
+ProcessCollector additionally exposes `mcp_one_process_*` CPU/memory/descriptor
+metrics when supported by the OS. It does not measure downstream/host resources.
+The route span disables automatic exception-body/stack recording: even a caller's
+cancellation reason stays out of route telemetry. Stable outcome attributes carry
+the diagnostic category. This does not reconfigure SDK/provider instrumentation;
+keep external SDK debug logging and payload capture disabled.

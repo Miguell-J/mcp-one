@@ -1,0 +1,8 @@
+{
+  "name": "mcp-one-development-tools",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {"node": ">=22.22.0"},
+  "devDependencies": {"@modelcontextprotocol/inspector": "2.10.1"},
+  "scripts": {"inspector": "mcp-inspector --cli"}
+}

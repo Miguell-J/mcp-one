@@ -1,0 +1,6 @@
+interface:
+  display_name: "mcp-protocol-audit"
+  short_description: "Mcp protocol audit checks"
+  default_prompt: "Use $mcp-protocol-audit for this repository and report actual validation evidence."
+policy:
+  allow_implicit_invocation: false

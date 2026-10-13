@@ -111,3 +111,5 @@ ENV/
 
 .uv-cache/
 .ruff_cache/
+tooling/node_modules/
+tooling/.inspector/

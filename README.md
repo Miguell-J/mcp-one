@@ -103,3 +103,11 @@ Tools-only federation is intentional. Resources/artifacts remain opaque referenc
 resource federation, subscriptions, tasks, sampling, elicitation and multi-round
 continuations are not advertised. Local bearer security is available; a public
 OAuth deployment requires a separate resource-server integration.
+
+## Independent development validation
+
+See [Inspector](docs/inspector.md) for the pinned, optional JavaScript CLI and real
+cross-SDK negative checks. `make test-fast` runs deterministic admission/security
+checks; `make test-inspector` runs the separate Inspector workflow after `make tooling`.
+Project-local skills live in `.agents/skills/` and are opt-in: `mcp-protocol-audit`
+and `gateway-resilience`. They reuse the existing checks and preserve gateway policy.

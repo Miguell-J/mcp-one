@@ -49,6 +49,7 @@ class Router:
         }
         self.reachable: dict[str, bool] = {}
         self.active = 0
+        self.metrics.gauge("active_calls", 0)
 
     async def call(self, params: CallToolRequestParams) -> CallToolResult:
         started = monotonic()
@@ -64,7 +65,11 @@ class Router:
         outcome = "success"
         permit = None
         admitted = False
-        with trace.get_tracer(__name__).start_as_current_span("mcp_one.route"):
+        result: CallToolResult | None = None
+        with trace.get_tracer(__name__).start_as_current_span(
+            "mcp_one.route", record_exception=False, set_status_on_exception=False
+        ) as span:
+            span.set_attribute("mcp_one.server", route.server_id)
             try:
                 if not self.policy.permits(route.upstream_name):
                     raise GatewayError(ErrorCode.POLICY_DENIED)
@@ -82,6 +87,7 @@ class Router:
                 permit = circuit.acquire()
                 self.active += 1
                 admitted = True
+                self.metrics.gauge("active_calls", self.active)
                 annotations = route.tool.annotations
                 safe = (
                     route.downstream_name in server.config.retry.safe_tools
@@ -149,26 +155,35 @@ class Router:
                     circuit.abandon(permit)
                 if admitted:
                     self.active -= 1
+                    self.metrics.gauge("active_calls", self.active)
                 self.metrics.increment("tool_calls", route.server_id, outcome)
                 self.metrics.observe("tool_latency_seconds", monotonic() - started, route.server_id)
-            context = trace.get_current_span().get_span_context()
-            metadata = {
-                "requestId": request_id,
-                "server": route.server_id,
-                "tool": route.upstream_name,
-                "durationMs": round((monotonic() - started) * 1000, 3),
-                "attempts": attempts,
-                "cache": "disabled",
-                "cached": False,
-                "route": {
-                    "serverId": route.server_id,
-                    "downstreamName": route.downstream_name,
-                    "catalogGeneration": snapshot.generation,
-                },
-                "traceId": f"{context.trace_id:032x}",
-                "spanId": f"{context.span_id:016x}",
-            }
-            log.info("gateway_call", **metadata, isError=result.is_error, outcome=outcome)
+                span.set_attribute("mcp_one.outcome", outcome)
+                span.set_attribute("mcp_one.attempts", attempts)
+                context = span.get_span_context()
+                metadata = {
+                    "requestId": request_id,
+                    "server": route.server_id,
+                    "tool": route.upstream_name,
+                    "durationMs": round((monotonic() - started) * 1000, 3),
+                    "attempts": attempts,
+                    "cache": "disabled",
+                    "cached": False,
+                    "route": {
+                        "serverId": route.server_id,
+                        "downstreamName": route.downstream_name,
+                        "catalogGeneration": snapshot.generation,
+                    },
+                    "traceId": f"{context.trace_id:032x}",
+                    "spanId": f"{context.span_id:016x}",
+                }
+                log.info(
+                    "gateway_call",
+                    **metadata,
+                    isError=result.is_error if result is not None else None,
+                    outcome=outcome,
+                )
+            assert result is not None
             return attach_metadata(result, metadata)
 
     def ready_servers(self) -> int:
