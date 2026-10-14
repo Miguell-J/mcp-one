@@ -99,6 +99,9 @@ Docker socket or privileged mode. Only loopback is published in Compose.
 
 [Validation evidence](docs/validation.md) · [Adversarial review](docs/adversarial-review.md).
 
+[Cordis consumer integration](docs/cordis.md) documents native enrollment and the
+opt-in end-to-end test against this unmodified gateway.
+
 Tools-only federation is intentional. Resources/artifacts remain opaque references;
 resource federation, subscriptions, tasks, sampling, elicitation and multi-round
 continuations are not advertised. Local bearer security is available; a public
